@@ -1,0 +1,14 @@
+{
+    "name": "veeam/veeam-rest-vbo365-mfa-authentication-example",
+    "description": "Veeam Backup for Microsoft Office 365 RESTful API: Authentication against MFA-enabled Organizations",
+    "authors": [
+        {
+            "name": "Niels Engelen",
+            "email": "niels@foonet.be"
+        }
+    ],
+    "require": {
+		"guzzlehttp/guzzle": "~7.0",
+		"microsoft/microsoft-graph": "^1.17"
+    }
+}

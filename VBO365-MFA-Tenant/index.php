@@ -114,6 +114,8 @@ span.round-tab i{
 </style>
 <script>
 $(document).ready(function() {
+	var callInverval;
+	
 	function storeValue(key, value) {
 		if (localStorage) {
 			localStorage.setItem(key, value);
@@ -129,6 +131,37 @@ $(document).ready(function() {
 			return $.cookies.get(key);
 		}
 	}
+	
+	const callApi = (clientid, tenantid, devicecode) => {
+	  return new Promise((resolve, reject) => {
+		setTimeout(() => {
+			$.post('action.php', {'action' : 'gettoken', 'clientid' : clientid, 'tenantid' : tenantid, 'devicecode' : devicecode}).done(function(data) {
+				resolve(JSON.parse(data));
+			});
+		}, 1000);
+	  });
+	}
+
+	const checkAuthenticated = (clientid, tenantid, devicecode, interval) => {  
+	  callInverval = setInterval(async() => {
+		response = await callApi(clientid, tenantid, devicecode);
+
+		if (response['error'] === 'authorization_pending') {
+			$('#polling').hide().html('Waiting for user authentication...').fadeIn('slow');
+			storeValue('assertion', 'error');
+		} else if (response['error'] === 'expired_token') {
+			$('#polling').hide().html('Token expired. Hit the refresh button and try again.').fadeIn('slow');
+			clearInterval(callInverval);
+			storeValue('assertion', 'error');
+		} else if (typeof response['token_type'] !== 'undefined' && response['token_type'].toLowerCase() === 'bearer') {
+			$('#polling').hide().html('You are authenticated to Microsoft Office 365. Click next to continue...').fadeIn('slow');
+			storeValue('assertion', JSON.stringify(response));
+			clearInterval(callInverval);
+		} else {
+			$('#polling').hide().html('Unknown error. Please try again.').fadeIn('slow');
+		}
+	  }, interval);
+	}
 
     $('a[data-toggle="tab"]').on('show.bs.tab', function(e) {
         var target = $(e.target);
@@ -143,8 +176,7 @@ $(document).ready(function() {
 		var step = $(this).parents('.tab-pane').attr('id');
 		var clientid = $('#clientid').val();
 		var tenantid = $('#tenantid').val();
-		var token;
-		
+
 		if (step == 'step1') {	
 			$.post('action.php', {'action' : 'getdevicecode', 'clientid' : clientid, 'tenantid' : tenantid}).done(function(data) {
 				if (data.match(/error/i)) {
@@ -153,24 +185,29 @@ $(document).ready(function() {
 				}
 				
 				var response = JSON.parse(data);
-				var code = response['user_code'];
+				var usercode = response['user_code'];
 				var devicecode = response['device_code'];
+				var interval = response['interval'] * 1000 | 0;
 
+				$('#user-code').val(usercode);
 				storeValue('devicecode', devicecode);
-				
-				$('#user-code').val(code);
+				storeValue('assertion', 'error');
+				checkAuthenticated(clientid, tenantid, devicecode, interval);	
 			});
 		} else if (step == 'step2') {
-			var devicecode = getStoredValue('devicecode');
-			
-			$.post('action.php', {'action' : 'gettoken', 'clientid' : clientid, 'tenantid' : tenantid, 'devicecode' : devicecode}).done(function(data) {
-				storeValue('assertion', data);
-				$('#graphlogin').val(data);
-			});
+			if (assertion === 'error') {
+				alert('You are not authenticated.');
+				return;
+			} else {
+				var assertion = getStoredValue('assertion');
+				
+				clearInterval(callInverval);
+				$('#graphlogin').val(assertion);
+			}
 		} else if (step == 'step3') {
 			var host = $('#vboserver').val();	
 			var assertion = getStoredValue('assertion');
-
+			
 			$.post('action.php', {'action' : 'login', 'host' : host, 'tenantid' : tenantid, 'assertion' : assertion}).done(function(data) {
 				$('#vbologin').val(data);
 			});
@@ -221,9 +258,9 @@ function prevTab(elem) {
 					<div class="row">
 						<div class="form-group col-md-9">
 							<label>Tenant ID:</label> 
-							<input class="form-control" type="text" id="tenantid" value="esdeka.onmicrosoft.com"> 
+							<input class="form-control" type="text" id="tenantid" placeholder="company.onmicrosoft.com"> 
 							<label>Application ID (client ID):</label> 
-							<input class="form-control" type="text" id="clientid" value="c4b96bb7-bf65-42ad-a189-5b1a4493608f"> 
+							<input class="form-control" type="text" id="clientid" placeholder="abcdefgh-1234-abcd-xyza-1234567890ab"> 
 						</div>
 					</div>
 					<ul class="list-inline">
@@ -234,7 +271,8 @@ function prevTab(elem) {
 					<h4 class="text-center">Step 2: Device Code</h4>
 					<input type="text" readonly id="user-code">
 					<button class="btn" data-clipboard-target="#user-code">Copy to clipboard</button><br /><br />
-					To sign in, use a web browser to open the page <a href="https://microsoft.com/devicelogin" target="_blank">https://microsoft.com/devicelogin</a> and enter the below code to authenticate.<br><b>Hitting next without doing this will result in an error!</b>
+					<span>To sign in, use a web browser to open the page <a href="https://microsoft.com/devicelogin" target="_blank">https://microsoft.com/devicelogin</a> and enter the below code to authenticate.</span>
+					<br><br><span id="polling">Waiting for user authentication...</span>
 					<script>
 					$('.btn').tooltip({
 					  trigger: 'click',
